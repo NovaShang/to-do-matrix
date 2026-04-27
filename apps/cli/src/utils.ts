@@ -1,4 +1,4 @@
-import type { EnrichedTask } from "./engine";
+import type { EnrichedTask } from "@tdmx/core/engine";
 
 export const QUADRANT_META: Record<number, { label: string; action: string; emoji: string }> = {
   1: { label: "重要 & 紧急",     action: "立即执行",   emoji: "🔴" },

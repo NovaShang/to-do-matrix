@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "paths": {
+      "@tdmx/core": ["../../packages/core/src/types.ts"],
+      "@tdmx/core/engine": ["../../packages/core/src/engine.ts"]
+    }
+  }
+}

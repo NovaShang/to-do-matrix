@@ -1,7 +1,5 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db";
-import { tasks } from "../db/schema";
-import { getQuadrant, getUrgencyScore } from "../engine";
+import { loadConfig } from "../config";
+import { createTask, TdmxApiError } from "../api/client";
 import { parseDueDate, QUADRANT_META } from "../utils";
 
 interface AddOptions {
@@ -26,47 +24,33 @@ export async function addCommand(title: string, opts: AddOptions) {
   }
 
   const effort = Number(opts.effort ?? 1);
-  const dueDate = opts.due ? parseDueDate(opts.due) : undefined;
-  const parentId = opts.parent ? Number(opts.parent) : undefined;
+  const dueDate = opts.due ? parseDueDate(opts.due) : null;
+  const parentId = opts.parent ? Number(opts.parent) : null;
 
-  // 验证父任务存在
-  if (parentId) {
-    const [parent] = await db.select().from(tasks).where(eq(tasks.id, parentId));
-    if (!parent) {
-      console.error(`错误: 找不到 ID 为 ${parentId} 的父任务`);
+  const config = await loadConfig();
+
+  let task;
+  try {
+    task = await createTask(config, { title, importance, effort, dueDate, parentId, notes: opts.notes ?? null });
+  } catch (e) {
+    if (e instanceof TdmxApiError) {
+      console.error(`错误: ${e.body.message}`);
       process.exit(1);
     }
+    throw e;
   }
 
-  const rows = await db
-    .insert(tasks)
-    .values({
-      title,
-      importance,
-      effort,
-      dueDate,
-      parentId: parentId ?? null,
-      notes: opts.notes,
-    })
-    .returning();
-  const inserted = rows[0]!;
-
   if (opts.json) {
-    const quadrant = getQuadrant(inserted);
-    const urgencyScore = getUrgencyScore(inserted);
-    console.log(JSON.stringify({ ...inserted, quadrant, urgencyScore }, null, 2));
+    console.log(JSON.stringify(task, null, 2));
     return;
   }
 
-  const q = getQuadrant(inserted);
-  const meta = QUADRANT_META[q];
-  const urgency = getUrgencyScore(inserted);
-
-  console.log(`✅ 已添加任务 [${inserted.id}]`);
-  console.log(`   标题: ${inserted.title}`);
-  console.log(`   重要度: ${inserted.importance}  工时: ${inserted.effort}h`);
-  console.log(`   象限: Q${q} ${meta.emoji} ${meta.label}  (紧急度: ${urgency.toFixed(2)})`);
-  if (inserted.dueDate) console.log(`   截止: ${inserted.dueDate}`);
-  if (inserted.parentId) console.log(`   父任务: #${inserted.parentId}`);
-  if (inserted.notes) console.log(`   备注: ${inserted.notes}`);
+  const meta = QUADRANT_META[task.quadrant]!;
+  console.log(`✅ 已添加任务 [${task.id}]`);
+  console.log(`   标题: ${task.title}`);
+  console.log(`   重要度: ${task.importance}  工时: ${task.effort}h`);
+  console.log(`   象限: Q${task.quadrant} ${meta.emoji} ${meta.label}  (紧急度: ${task.urgencyScore.toFixed(2)})`);
+  if (task.dueDate) console.log(`   截止: ${task.dueDate}`);
+  if (task.parentId) console.log(`   父任务: #${task.parentId}`);
+  if (task.notes) console.log(`   备注: ${task.notes}`);
 }

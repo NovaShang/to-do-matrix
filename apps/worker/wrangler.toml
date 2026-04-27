@@ -1,0 +1,13 @@
+name = "tdmx-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tdmx-db"
+database_id = "2b9354ae-c943-43ec-bc8b-52e2cbe96111"
+
+[vars]
+# Override BETTER_AUTH_URL in .dev.vars for local dev
+BETTER_AUTH_URL = "https://tdmx-worker.styleshang.workers.dev"

@@ -1,7 +1,5 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db";
-import { tasks } from "../db/schema";
-import { getQuadrant, getUrgencyScore } from "../engine";
+import { loadConfig } from "../config";
+import { updateTask, TdmxApiError, type UpdateTaskBody } from "../api/client";
 import { parseDueDate, QUADRANT_META } from "../utils";
 
 const STATUS_ICON: Record<string, string> = {
@@ -15,7 +13,7 @@ interface UpdateOptions {
   title?: string;
   importance?: number;
   effort?: number;
-  due?: string;
+  due?: string | boolean;
   parent?: number;
   notes?: string;
   start?: boolean;
@@ -26,22 +24,15 @@ interface UpdateOptions {
 }
 
 export async function updateCommand(id: number, opts: UpdateOptions) {
-  const [existing] = await db.select().from(tasks).where(eq(tasks.id, id));
-  if (!existing) {
-    console.error(`错误: 找不到 ID 为 ${id} 的任务`);
-    process.exit(1);
-  }
+  const updates: UpdateTaskBody = {};
 
-  const updates: Partial<typeof tasks.$inferInsert> = {
-    updatedAt: new Date().toISOString(),
-  };
-
-  if (opts.title !== undefined) updates.title = opts.title;
+  if (opts.title !== undefined)      updates.title = opts.title;
   if (opts.importance !== undefined) updates.importance = Number(opts.importance);
-  if (opts.effort !== undefined) updates.effort = Number(opts.effort);
+  if (opts.effort !== undefined)     updates.effort = Number(opts.effort);
 
   if (opts.due !== undefined) {
-    updates.dueDate = opts.due === "" ? null : parseDueDate(opts.due);
+    // -d ""（空字符串）或 -d 单独使用（cac 解析为 true）→ 清除截止时间
+    updates.dueDate = opts.due === "" || opts.due === true ? null : parseDueDate(opts.due);
   }
 
   if (opts.parent !== undefined) {
@@ -53,52 +44,53 @@ export async function updateCommand(id: number, opts: UpdateOptions) {
         console.error("错误: 不能将任务设为自己的子任务");
         process.exit(1);
       }
-      const [p] = await db.select().from(tasks).where(eq(tasks.id, pid));
-      if (!p) {
-        console.error(`错误: 找不到 ID 为 ${pid} 的父任务`);
-        process.exit(1);
-      }
       updates.parentId = pid;
     }
   }
 
   if (opts.notes !== undefined) updates.notes = opts.notes;
 
-  // 状态流转
   if (opts.start)   updates.status = "in_progress";
   if (opts.done)    updates.status = "done";
   if (opts.abandon) updates.status = "abandoned";
   if (opts.reopen)  updates.status = "pending";
 
-  if (Object.keys(updates).length === 1) {
+  if (Object.keys(updates).length === 0) {
     console.log("没有提供任何更新内容，请使用 --help 查看可用选项。");
     process.exit(0);
   }
 
-  const rows = await db
-    .update(tasks)
-    .set(updates)
-    .where(eq(tasks.id, id))
-    .returning();
-  const updated = rows[0]!;
+  const config = await loadConfig();
+
+  let task;
+  try {
+    task = await updateTask(config, id, updates);
+  } catch (e) {
+    if (e instanceof TdmxApiError) {
+      if (e.status === 404) {
+        console.error(`错误: 找不到 ID 为 ${id} 的任务`);
+      } else {
+        console.error(`错误: ${e.body.message}`);
+      }
+      process.exit(1);
+    }
+    throw e;
+  }
 
   if (opts.json) {
-    const quadrant = getQuadrant(updated);
-    const urgencyScore = getUrgencyScore(updated);
-    console.log(JSON.stringify({ ...updated, quadrant, urgencyScore }, null, 2));
+    console.log(JSON.stringify(task, null, 2));
     return;
   }
 
-  const q = getQuadrant(updated);
-  const meta = QUADRANT_META[q]!;
-  const icon = STATUS_ICON[updated.status] ?? "?";
+  const meta = QUADRANT_META[task.quadrant]!;
+  const icon = STATUS_ICON[task.status] ?? "?";
 
-  console.log(`✏️  已更新任务 [${updated.id}]`);
-  console.log(`   标题: ${updated.title}`);
-  console.log(`   重要度: ${updated.importance}  工时: ${updated.effort}h`);
-  console.log(`   象限: Q${q} ${meta.emoji} ${meta.label}`);
-  console.log(`   状态: ${icon} ${updated.status}`);
-  if (updated.dueDate) console.log(`   截止: ${updated.dueDate}`);
-  if (updated.parentId) console.log(`   父任务: #${updated.parentId}`);
-  if (updated.notes) console.log(`   备注: ${updated.notes}`);
+  console.log(`✏️  已更新任务 [${task.id}]`);
+  console.log(`   标题: ${task.title}`);
+  console.log(`   重要度: ${task.importance}  工时: ${task.effort}h`);
+  console.log(`   象限: Q${task.quadrant} ${meta.emoji} ${meta.label}`);
+  console.log(`   状态: ${icon} ${task.status}`);
+  if (task.dueDate) console.log(`   截止: ${task.dueDate}`);
+  if (task.parentId) console.log(`   父任务: #${task.parentId}`);
+  if (task.notes) console.log(`   备注: ${task.notes}`);
 }

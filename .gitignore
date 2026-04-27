@@ -42,5 +42,11 @@ Thumbs.db
 .vscode/settings.json
 .vscode/launch.json
 
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+apps/worker/.dev.vars
+.local.db
+
 # Claude Code (local only)
 .claude/settings.local.json

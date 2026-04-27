@@ -1,7 +1,9 @@
+#!/usr/bin/env bun
 import cac from "cac";
 import { addCommand } from "./commands/add";
 import { listCommand } from "./commands/list";
 import { updateCommand } from "./commands/update";
+import { configCommand } from "./commands/config";
 
 const cli = cac("tdmx");
 
@@ -60,7 +62,7 @@ cli
   .option("-t, --title <text>", "修改标题")
   .option("-i, --importance <n>", "修改重要度")
   .option("-e, --effort <hours>", "修改预估工时")
-  .option("-d, --due <datetime>", "修改截止时间（空字符串 '' 清除）")
+  .option("-d, --due [datetime]", "修改截止时间（空字符串 '' 清除）")
   .option("-p, --parent <id>", "修改父任务（0 解除父子关系）")
   .option("-n, --notes <text>", "修改备注")
   .option("--start", "标记为进行中")
@@ -76,23 +78,43 @@ cli
   });
 
 // ─────────────────────────────────────────────
+//  tdmx config <action> [value]
+// ─────────────────────────────────────────────
+cli
+  .command("config <action> [value]", "配置 tdmx（set-url | set-key | show）")
+  .example("tdmx config set-url https://worker.example.workers.dev")
+  .example("tdmx config set-key <your-api-key>")
+  .example("tdmx config show")
+  .action(async (action: string, value: string | undefined) => {
+    await configCommand(action as "set-url" | "set-key" | "show", value);
+  });
+
+// ─────────────────────────────────────────────
 cli.help();
 cli.version("0.1.0");
 
 /**
- * cac 会把 `-1` 解析为未知 flag，需要预处理 argv：
- * 将 `-i -1` 这类"选项 + 负数值"合并为 `-i=-1`
+ * cac 的解析有两个边界 case 需要预处理 argv：
+ * 1. 负数值：`-i -1` 会把 `-1` 当作未知 flag → 合并为 `-i=-1`
+ * 2. 空字符串：`-d ""` 会被 cac 当作"无值" → 合并为 `-d=`
  */
 const NUMERIC_FLAGS = new Set(["-i", "--importance", "-e", "--effort", "-p", "--parent"]);
+const VALUE_FLAGS = new Set([
+  "-i", "--importance", "-e", "--effort", "-p", "--parent",
+  "-d", "--due", "-t", "--title", "-n", "--notes",
+]);
 
-function fixNegativeNumbers(argv: string[]): string[] {
+function preprocessArgv(argv: string[]): string[] {
   const result: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     const next = argv[i + 1];
     if (NUMERIC_FLAGS.has(arg) && next !== undefined && /^-\d+(\.\d+)?$/.test(next)) {
       result.push(`${arg}=${next}`);
-      i++; // 跳过已合并的 next
+      i++;
+    } else if (VALUE_FLAGS.has(arg) && next === "") {
+      result.push(`${arg}=`);
+      i++;
     } else {
       result.push(arg);
     }
@@ -100,4 +122,4 @@ function fixNegativeNumbers(argv: string[]): string[] {
   return result;
 }
 
-cli.parse(fixNegativeNumbers(process.argv));
+cli.parse(preprocessArgv(process.argv));

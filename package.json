@@ -1,0 +1,9 @@
+{
+  "name": "to-do-matrix",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:cli": "bun run --cwd apps/cli dev",
+    "dev:worker": "bun run --cwd apps/worker dev"
+  }
+}
